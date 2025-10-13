@@ -1,0 +1,24 @@
+{
+  "name": "apex-meme-arb-bot",
+  "version": "1.0.2",
+  "type": "module",
+  "description": "USDC/MEME/USDC arbitrage scanner & executor via Jupiter API (free/ultra) with multi-DEX awareness, snapshots, and colorful logs.",
+  "main": "memes.js",
+  "scripts": {
+    "start": "node memes.js",
+    "dev": "NODE_OPTIONS='--trace-warnings' node index.js"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.7",
+    "@solana/web3.js": "^1.98.4",
+    "boxen": "^8.0.1",
+    "bs58": "^6.0.0",
+    "chalk-animation": "^2.0.3",
+    "colorette": "^2.0.20",
+    "dotenv": "^16.4.5",
+    "gradient-string": "^3.0.0",
+    "jito-ts": "^4.2.1",
+    "node-fetch": "^3.3.2",
+    "opti-tools": "^0.2.4"
+  }
+}
