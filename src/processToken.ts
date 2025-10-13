@@ -18,8 +18,8 @@ const normalizeDexes = (quote: JupiterQuote) => normalizeDexSet(extractDexLabels
 
 const routePassesFilters = (quote: JupiterQuote): boolean => {
   const labels = normalizeDexes(quote);
-  const include = CFG.INCLUDE_DEXES.map((dex) => normalizeDexLabel(dex));
-  const exclude = CFG.EXCLUDE_DEXES.map((dex) => normalizeDexLabel(dex));
+  const include = CFG.INCLUDE_DEXES.map((dex) => normalizeDexLabel(dex)).filter(Boolean);
+  const exclude = CFG.EXCLUDE_DEXES.map((dex) => normalizeDexLabel(dex)).filter(Boolean);
 
   if (exclude.length) {
     for (const label of labels) {
@@ -144,7 +144,9 @@ export async function processToken(
           payer,
           tipSol: process.env.JITO_TIP_SOL_BUY ?? '0.006',
         });
-        if (!bundleId) {
+        if (bundleId) {
+          console.log(card('🧩 BUY BUNDLE SENT', cyan(String(bundleId)), 'ok'));
+        } else {
           const sigBuy = await sendB64Tx(conn, buyB64, payer);
           console.log(card('🟢 BUY SENT (fallback)', cyan(sigBuy), 'ok'));
         }
@@ -169,7 +171,9 @@ export async function processToken(
             payer,
             tipSol: process.env.JITO_TIP_SOL_SELL ?? '0.008',
           });
-          if (!bundleId) {
+          if (bundleId) {
+            console.log(card('🧩 SELL BUNDLE SENT', cyan(String(bundleId)), 'ok'));
+          } else {
             const sigSell = await sendB64Tx(conn, sellB64, payer);
             console.log(card('🔵 SELL SENT (fallback)', cyan(sigSell), 'ok'));
           }

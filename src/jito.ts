@@ -6,7 +6,7 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js';
 import jito from 'jito-ts';
-import { green, yellow, cyan } from './logger.js';
+import { green, yellow } from './logger.js';
 
 const { searcher, bundle } = jito;
 const { searcherClient } = searcher;
@@ -149,7 +149,6 @@ export async function sendBundleWithTip({
 
   try {
     const bundleId = await jitoClient.sendBundle(bundleTx);
-    console.log(cyan(`[JITO] bundle sent: ${bundleId}`));
     return bundleId;
   } catch (error) {
     console.log(yellow(`[JITO] sendBundle error: ${(error as Error).message}`));

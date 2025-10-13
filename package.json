@@ -3,10 +3,11 @@
   "version": "1.0.2",
   "type": "module",
   "description": "USDC/MEME/USDC arbitrage scanner & executor via Jupiter API (free/ultra) with multi-DEX awareness, snapshots, and colorful logs.",
-  "main": "memes.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node memes.js",
-    "dev": "NODE_OPTIONS='--trace-warnings' node index.js"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch --preserveWatchOutput"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.14",
@@ -23,9 +24,8 @@
   },
   "private": true,
   "devDependencies": {
-    "@types/bun": "^1.3.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5.9.3"
+    "@types/bun": "^1.3.0",
+    "@types/node": "^22.9.0",
+    "typescript": "^5.4.0"
   }
 }

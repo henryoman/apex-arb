@@ -34,14 +34,16 @@ Folder -> CMD
 1. Config .env
 2. Rename .env.example to .env
 3. npm install
-4. node memes.js
+4. npm run build
+5. npm start
 
 ▶️ macOS / Linux:
 
 Config .env
 Rename .env.example to .env
 npm install
-node memes.js
+npm run build
+npm start
 
 ```
 
