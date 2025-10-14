@@ -10,17 +10,8 @@ import { processToken } from './processToken.js';
 import { snapshotTick } from './stats.js';
 import { initJito } from './jito.js';
 import { sleep } from './utils.js';
-import { initializeSession } from 'opti-tools';
 
 async function main(): Promise<void> {
-  if (CFG.PRIVATE_KEY_B58) {
-    try {
-      initializeSession(CFG.PRIVATE_KEY_B58);
-    } catch {
-      // optional helper, ignore failures
-    }
-  }
-
   await printBanner();
 
   console.log(

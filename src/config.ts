@@ -65,7 +65,7 @@ export const CFG: Config = {
   SLIPPAGE_BPS: Number(process.env.SLIPPAGE_BPS ?? 50),
   INCLUDE_DEXES: toList(process.env.INCLUDE_DEXES),
   INCLUDE_MODE: toIncludeMode(process.env.INCLUDE_MODE),
-  EXCLUDE_DEXES: toList(process.env.EXCLUDE_DEXES),
+  EXCLUDE_DEXES: toList(process.env.EXCLUDE_DEXES ?? 'tessera,solfi'),
   PRIORITY_LAMPORTS: Number(process.env.PRIORITY_LAMPORTS ?? 10000),
   JITO_APPLY_MODE: (process.env.JITO_APPLY_MODE ?? 'both').toLowerCase(),
   JITO_TIP_LAMPORTS: Number(process.env.JITO_TIP_LAMPORTS ?? 2000),
