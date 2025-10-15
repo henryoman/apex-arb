@@ -1,5 +1,6 @@
 import bs58 from 'bs58';
 import { Connection, Keypair } from '@solana/web3.js';
+import './logManager.js';
 import { printBanner } from './banner.js';
 import { CFG } from './config.js';
 import { tag, cyan, gray } from './logger.js';
