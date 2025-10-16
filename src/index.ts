@@ -1,8 +1,11 @@
+import path from 'node:path';
+import os from 'node:os';
 import bs58 from 'bs58';
 import { Connection, Keypair } from '@solana/web3.js';
-import './logManager.js';
+import { getCurrentLogFile } from './logManager.js';
 import { printBanner } from './banner.js';
 import { CFG } from './config.js';
+import type { Config } from './config.js';
 import { tag, cyan, gray } from './logger.js';
 import { readMemes } from './io.js';
 import { normalizeDexLabel } from './dex.js';
@@ -12,8 +15,128 @@ import { snapshotTick } from './stats.js';
 import { initJito } from './jito.js';
 import { sleep } from './utils.js';
 
+const logFilePath = getCurrentLogFile();
+const runtimeStartedAt = new Date();
+
+type ConfigIssue = {
+  severity: 'warn' | 'error';
+  message: string;
+};
+
+function inspectConfig(config: Config): ConfigIssue[] {
+  const issues: ConfigIssue[] = [];
+
+  const numericChecks: Array<{
+    field: keyof Config;
+    value: number;
+    min?: number;
+    allowZero?: boolean;
+  }> = [
+    { field: 'BUY_AMOUNT_USDC', value: config.BUY_AMOUNT_USDC, min: 0 },
+    { field: 'MIN_NET_PROFIT_USDC', value: config.MIN_NET_PROFIT_USDC, min: 0, allowZero: true },
+    { field: 'SLIPPAGE_BPS', value: config.SLIPPAGE_BPS, min: 0, allowZero: true },
+    { field: 'PRIORITY_LAMPORTS', value: config.PRIORITY_LAMPORTS, min: 0, allowZero: true },
+    { field: 'JITO_TIP_LAMPORTS', value: config.JITO_TIP_LAMPORTS, min: 0, allowZero: true },
+    { field: 'SCAN_INTERVAL_MS', value: config.SCAN_INTERVAL_MS, min: 0, allowZero: true },
+    { field: 'PER_TOKEN_COOLDOWN_MS', value: config.PER_TOKEN_COOLDOWN_MS, min: 0, allowZero: true },
+    { field: 'MAX_PARALLEL', value: config.MAX_PARALLEL, min: 1 },
+    { field: 'HTTP_TIMEOUT_MS', value: config.HTTP_TIMEOUT_MS, min: 1 },
+    { field: 'FETCH_RETRIES', value: config.FETCH_RETRIES, min: 1 },
+    { field: 'RETRY_BACKOFF_MS', value: config.RETRY_BACKOFF_MS, min: 0, allowZero: true },
+  ];
+
+  for (const { field, value, min = 0, allowZero } of numericChecks) {
+    if (!Number.isFinite(value)) {
+      issues.push({ severity: 'error', message: `${String(field)} is not a finite number` });
+      continue;
+    }
+    if (value < min || (!allowZero && value === 0)) {
+      const comparator = allowZero ? '>= 0' : `>${min - 1}`;
+      issues.push({ severity: 'error', message: `${String(field)} must be ${comparator} (received ${value})` });
+    }
+    if (field === 'SLIPPAGE_BPS' && value === 0) {
+      issues.push({ severity: 'warn', message: 'SLIPPAGE_BPS is 0; swaps will fail unless routes are perfectly priced.' });
+    }
+  }
+
+  if (!config.RPC_URL) {
+    issues.push({ severity: 'error', message: 'RPC_URL is required but missing.' });
+  }
+
+  if (config.JUP_MODE === 'ULTRA' && !config.JUP_API_KEY) {
+    issues.push({ severity: 'warn', message: 'JUP_MODE is ULTRA but JUP_API_KEY is empty; Jupiter may reject requests.' });
+  }
+
+  if (!config.DRY_RUN && !config.PRIVATE_KEY_B58) {
+    issues.push({ severity: 'error', message: 'DRY_RUN=false requires PRIVATE_KEY_B58.' });
+  }
+
+  return issues;
+}
+
+function logStartupContext(memeCount: number): void {
+  console.log(
+    tag.info(`Started: ${runtimeStartedAt.toISOString()}`),
+    '|',
+    tag.info(`PID: ${process.pid}`),
+    '|',
+    tag.info(`Bun: ${process.versions.bun ?? 'unknown'}`),
+  );
+
+  console.log(
+    tag.info(`Host: ${os.hostname()}`),
+    '|',
+    tag.info(`Platform: ${process.platform}`),
+    '|',
+    tag.info(`Cores: ${os.cpus().length}`),
+  );
+
+  if (logFilePath) {
+    console.log(tag.info(`Log file: ${logFilePath}`));
+  } else {
+    console.log(tag.warn('Log file path unavailable (logging stream not initialised).'));
+  }
+
+  console.log(
+    tag.info(`Memes: ${memeCount}`),
+    '|',
+    tag.info(`Scan interval: ${CFG.SCAN_INTERVAL_MS}ms`),
+    '|',
+    tag.info(`Cooldown/token: ${CFG.PER_TOKEN_COOLDOWN_MS}ms`),
+    '|',
+    tag.info(`Concurrency limit: ${CFG.MAX_PARALLEL}`),
+  );
+
+  console.log(
+    tag.info(`HTTP timeout: ${CFG.HTTP_TIMEOUT_MS}ms`),
+    '|',
+    tag.info(`Retries: ${CFG.FETCH_RETRIES}`),
+    '|',
+    tag.info(`Retry backoff base: ${CFG.RETRY_BACKOFF_MS}ms`),
+  );
+
+  console.log(
+    tag.info(`JITO mode: ${(process.env.JITO_MODE ?? 'off').toLowerCase()}`),
+    '|',
+    tag.info(`Priority fee: ${CFG.PRIORITY_LAMPORTS} lamports`),
+    '|',
+    tag.info(`Jito tip (lamports): ${CFG.JITO_TIP_LAMPORTS}`),
+  );
+
+  console.log(
+    tag.info(`Memes file: ${path.resolve('memes.txt')}`),
+    '|',
+    tag.info(`USDC mint: ${CFG.USDC_MINT}`),
+    '|',
+    tag.info(`Include mode: ${CFG.INCLUDE_MODE}`),
+  );
+}
+
 async function main(): Promise<void> {
+
   await printBanner();
+
+  console.log(tag.info('Runtime context initialising…'), logFilePath ? gray(`→ ${logFilePath}`) : gray('(no file)'));
 
   console.log(
     '\nUSDC ↔ MEME ↔ USDC Arbitrage — Jupiter',
@@ -34,6 +157,21 @@ async function main(): Promise<void> {
 
   const includeDisplay = CFG.INCLUDE_DEXES.map((dex) => normalizeDexLabel(dex));
   const excludeDisplay = CFG.EXCLUDE_DEXES.map((dex) => normalizeDexLabel(dex));
+
+  const configIssues = inspectConfig(CFG);
+  if (configIssues.length) {
+    console.log(gray('-'.repeat(100)));
+    for (const issue of configIssues) {
+      const prefix = issue.severity === 'error' ? tag.bad('CONFIG') : tag.warn('CONFIG');
+      console.log(prefix, issue.message);
+    }
+    console.log(gray('-'.repeat(100)));
+    const hasErrors = configIssues.some((issue) => issue.severity === 'error');
+    if (hasErrors) {
+      console.log(tag.bad('Configuration errors detected; aborting startup.'));
+      process.exit(1);
+    }
+  }
 
   if (includeDisplay.length) {
     console.log(
@@ -62,6 +200,8 @@ async function main(): Promise<void> {
 
   const memes = readMemes('memes.txt');
   console.log(tag.info(`Loaded ${memes.length} meme tokens from memes.txt`));
+
+  logStartupContext(memes.length);
 
   const connection = new Connection(CFG.RPC_URL, { commitment: 'confirmed' });
   await initJito(connection);

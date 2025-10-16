@@ -7,8 +7,10 @@ export interface StatsState {
   candidates: number;
   executed: number;
   bestNet: number;
-  netSum: number;
+  totalNetSum: number;
+  candidateNetSum: number;
   nearMiss: number;
+  errors: number;
 }
 
 export const stats: StatsState = {
@@ -17,24 +19,33 @@ export const stats: StatsState = {
   candidates: 0,
   executed: 0,
   bestNet: -Infinity,
-  netSum: 0,
+  totalNetSum: 0,
+  candidateNetSum: 0,
   nearMiss: 0,
+  errors: 0,
 };
 
 export function snapshotTick(): void {
   const now = Date.now();
   if (now - stats.minuteWindowStart < 60_000) return;
 
-  const avg = stats.candidates ? stats.netSum / stats.candidates : 0;
+  const avgSeen = stats.seenSpreads ? stats.totalNetSum / stats.seenSpreads : 0;
+  const avgCandidates = stats.candidates ? stats.candidateNetSum / stats.candidates : 0;
+  const formatUsd = (value: number) => (value >= 0 ? tag.usd(value) : tag.negusd(value));
+  const bestNetDisplay = Number.isFinite(stats.bestNet)
+    ? formatUsd(stats.bestNet)
+    : gray('n/a');
   const title = bold(underline('📈 SNAPSHOT (1m)'));
   const line = [
     `${title}`,
     `spreads=${cyan(String(stats.seenSpreads))}`,
     `candidates>=min=${green(String(stats.candidates))}`,
     `executed=${magenta(String(stats.executed))}`,
-    `bestNet=${stats.bestNet > 0 ? tag.usd(stats.bestNet) : tag.negusd(stats.bestNet)}`,
-    `avgNet=${avg >= 0 ? tag.usd(avg) : tag.negusd(avg)}`,
+    `bestNet=${bestNetDisplay}`,
+    `avgNetSeen=${formatUsd(avgSeen)}`,
+    `avgNetCandidates=${stats.candidates ? formatUsd(avgCandidates) : gray('n/a')}`,
     `nearMiss(≤$0.10)=${yellow(String(stats.nearMiss))}`,
+    `errors=${yellow(String(stats.errors))}`,
   ].join('  |  ');
   console.log('\n' + line + '\n' + gray('-'.repeat(100)));
 
@@ -43,6 +54,8 @@ export function snapshotTick(): void {
   stats.candidates = 0;
   stats.executed = 0;
   stats.bestNet = -Infinity;
-  stats.netSum = 0;
+  stats.totalNetSum = 0;
+  stats.candidateNetSum = 0;
   stats.nearMiss = 0;
+  stats.errors = 0;
 }

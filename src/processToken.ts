@@ -87,13 +87,14 @@ export async function processToken(
 
     stats.seenSpreads += 1;
     if (net > stats.bestNet) stats.bestNet = net;
-    stats.netSum += net;
+    stats.totalNetSum += net;
 
     const netStr = net >= 0 ? tag.usd(net) : tag.negusd(net);
     const candidate = net >= CFG.MIN_NET_PROFIT_USDC;
 
     if (candidate) {
       stats.candidates += 1;
+      stats.candidateNetSum += net;
       const title = `🎯 CANDIDATE  ${short}   net ${netStr}`;
       const body = [
         `${cyan('back')} ${tag.usd(usdcBack)}   ${cyan('size')} ${tag.usd(CFG.BUY_AMOUNT_USDC)}   ${cyan('slip')} ${(CFG.SLIPPAGE_BPS / 100).toFixed(2)}%`,
@@ -190,6 +191,7 @@ export async function processToken(
       await sleep(CFG.PER_TOKEN_COOLDOWN_MS);
     }
   } catch (error) {
+    stats.errors += 1;
     console.log(logPrefix, tag.bad((error as Error).message ?? String(error)));
   }
 }

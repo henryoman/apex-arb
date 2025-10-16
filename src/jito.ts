@@ -6,7 +6,7 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js';
 import jito from 'jito-ts';
-import { green, yellow } from './logger.js';
+import { green, yellow, tag } from './logger.js';
 
 const { searcher, bundle } = jito;
 const { searcherClient } = searcher;
@@ -27,7 +27,7 @@ export async function initJito(_connection: Connection): Promise<void> {
 
   if (process.env.JITO_TIP_ACCOUNT) {
     jitoTipAccount = process.env.JITO_TIP_ACCOUNT.trim();
-    console.log(green(`[JITO] Tip account (ENV): ${jitoTipAccount}`));
+    console.log(tag.info(`[JITO] Tip account (ENV): ${jitoTipAccount}`));
     return;
   }
 
@@ -38,12 +38,12 @@ export async function initJito(_connection: Connection): Promise<void> {
     const tipsGrpc = await jitoClient.getTipAccounts?.();
     if (Array.isArray(tipsGrpc) && tipsGrpc.length > 0) {
       jitoTipAccount = tipsGrpc[0];
-      console.log(green(`[JITO] Tip account (gRPC): ${jitoTipAccount}`));
+      console.log(tag.info(`[JITO] Tip account (gRPC): ${jitoTipAccount}`));
       return;
     }
-    console.log(yellow('[JITO] Loading...'));
+    console.log(tag.warn('[JITO] Loading...'));
   } catch (error) {
-    console.log(yellow(`[JITO] Loading...: ${(error as Error).message}`));
+    console.log(tag.warn(`[JITO] Loading...: ${(error as Error).message}`));
   }
 
   try {
@@ -103,13 +103,13 @@ export async function initJito(_connection: Connection): Promise<void> {
     if (tipsHttp.length > 0) {
       const index = Math.floor(Math.random() * tipsHttp.length);
       jitoTipAccount = tipsHttp[index];
-      console.log(green(`[JITO] Tip account (HTTP): ${jitoTipAccount}`));
+      console.log(tag.info(`[JITO] Tip account (HTTP): ${jitoTipAccount}`));
       return;
     }
 
-    console.log(yellow('[JITO] Could not fetch tip accounts via HTTP. Restart the bot.'));
+    console.log(tag.warn('[JITO] Could not fetch tip accounts via HTTP. Restart the bot.'));
   } catch (error) {
-    console.log(yellow(`[JITO] JSON-RPC getTipAccounts error: ${(error as Error).message}`));
+    console.log(tag.warn(`[JITO] JSON-RPC getTipAccounts error: ${(error as Error).message}`));
   }
 }
 
@@ -143,7 +143,7 @@ export async function sendBundleWithTip({
     blockhash,
   );
   if (addResult instanceof Error) {
-    console.log(yellow(`[JITO] addTipTx error: ${addResult.message}`));
+    console.log(tag.warn(`[JITO] addTipTx error: ${addResult.message}`));
     return null;
   }
 
@@ -151,7 +151,7 @@ export async function sendBundleWithTip({
     const bundleId = await jitoClient.sendBundle(bundleTx);
     return bundleId;
   } catch (error) {
-    console.log(yellow(`[JITO] sendBundle error: ${(error as Error).message}`));
+    console.log(tag.warn(`[JITO] sendBundle error: ${(error as Error).message}`));
     return null;
   }
 }
