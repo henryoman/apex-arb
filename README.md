@@ -14,38 +14,36 @@
 It calculates net profit (slippage, estimated Jupiter fee, priority fee + Jito tip), applies DEX filters, prints candidates with beautiful log cards, and optionally executes live trades.
 
 ## ✨ Features
-- 🔄 Dual quoting: `/swap/v1/quote` for BUY & SELL.  
-- 📊 Net PnL calculation with fees & slippage.  
-- 🎯 Route filtering (INCLUDE / EXCLUDE DEX).  
-- 🌈 Pretty logs: gradient banner, emoji statuses, boxen cards.  
-- 🛡 DRY_RUN mode for safe testing.  
-- ⚡ Jito bundles support.  
+- 🔄 Dual quoting: `/swap/v1/quote` for BUY & SELL.
+- 📊 Net PnL calculation with fees & slippage.
+- 🎯 Route filtering (INCLUDE / EXCLUDE DEX).
+- 🛡 DRY_RUN simulation with transaction `simulateTransaction` preview.
+- 📈 Snapshot telemetry & structured log files per session.
+- ⚡ Optional Jito bundle submissions (relayer mode).
 
 ---
 
-📦 Quick Start:
+## 📦 Quick Start (Bun)
 
 ```
-▶️ WINDOWS:
+bun install
+cp .env.example .env
+# edit .env with your RPC + prefs
 
-CODE -> Download ZIP
-Folder -> CMD
+# Dry run (recommended first)
+DRY_RUN=true JITO_MODE=off bun dev
 
-1. Config .env
-2. Rename .env.example to .env
-3. npm install
-4. npm run build
-5. npm start
-
-▶️ macOS / Linux:
-
-Config .env
-Rename .env.example to .env
-npm install
-npm run build
-npm start
-
+# Live execution (requires PRIVATE_KEY_B58 etc.)
+DRY_RUN=false bun start
 ```
+
+Every `bun dev` session writes to `logs/session-*.log` with the exact console stream.
+
+### Dry-Run Best Practices
+- Keep `DRY_RUN=true` and `JITO_MODE=off` to simulate without touching bundles.
+- Use `JITO_MODE=relayer` plus a dummy `JITO_TIP_ACCOUNT` if you want to test relayer logging while staying dry.
+- The bot now calls `simulateTransaction` for both BUY and SELL legs; watch the `SIM BUY` / `SIM SELL` lines for compute usage and last logs.
+- Snapshot output (`📈 SNAPSHOT`) includes `errors` so you can spot failing routes quickly.
 
 ---
 

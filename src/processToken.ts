@@ -1,4 +1,4 @@
-import { Connection, Keypair } from '@solana/web3.js';
+import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
 import { CFG } from './config.js';
 import {
   quoteBuy,
@@ -15,6 +15,128 @@ import { card, tag, cyan, gray, green } from './logger.js';
 import { sendBundleWithTip } from './jito.js';
 
 const normalizeDexes = (quote: JupiterQuote) => normalizeDexSet(extractDexLabels(quote));
+
+const LOG_PREVIEW_LINES = 3;
+
+function summarizeLogs(logs?: string[] | null): string {
+  if (!logs?.length) return gray('logs=0');
+  const slice = logs.slice(-LOG_PREVIEW_LINES).map((line) => line.replace(/\u0000/g, ''));
+  return gray(`logs[-${slice.length}]: ${slice.join(' | ')}`);
+}
+
+function stringifyError(err: unknown): string {
+  if (typeof err === 'string') return err;
+  if (!err) return 'unknown';
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+async function simulateSwapLeg(
+  conn: Connection,
+  payer: Keypair,
+  swapB64: string,
+  logPrefix: string,
+  leg: 'BUY' | 'SELL',
+): Promise<void> {
+  const buffer = Buffer.from(swapB64, 'base64');
+  const transaction = VersionedTransaction.deserialize(buffer);
+  transaction.sign([payer]);
+
+  try {
+    const result = await conn.simulateTransaction(transaction, {
+      commitment: 'processed',
+      sigVerify: true,
+    });
+    const { err, unitsConsumed, logs } = result.value;
+    if (err) {
+      console.log(
+        logPrefix,
+        tag.warn(`SIM ${leg}`),
+        'error',
+        stringifyError(err),
+        '| units',
+        typeof unitsConsumed === 'number' ? unitsConsumed : 'n/a',
+      );
+      if (logs?.length) {
+        console.log(logPrefix, summarizeLogs(logs));
+      }
+    } else {
+      console.log(
+        logPrefix,
+        tag.info(`SIM ${leg}`),
+        '| units',
+        typeof unitsConsumed === 'number' ? unitsConsumed : 'n/a',
+        '| logs',
+        logs?.length ?? 0,
+      );
+      if (logs?.length) {
+        console.log(logPrefix, summarizeLogs(logs));
+      }
+    }
+  } catch (error) {
+    console.log(
+      logPrefix,
+      tag.warn(`SIM ${leg} exception`),
+      stringifyError((error as Error).message ?? error),
+    );
+  }
+}
+
+async function runDrySimulations(
+  conn: Connection,
+  payer: Keypair,
+  logPrefix: string,
+  short: string,
+  quoteBuyResult: JupiterQuote,
+  quoteSellResult: JupiterQuote,
+): Promise<void> {
+  if (CFG.MODE !== 'sell-only') {
+    try {
+      const buySwap = await buildSwapTx({
+        quote: quoteBuyResult,
+        userPublicKey: payer.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+      });
+      const buyB64 = buySwap.swapTransaction;
+      if (!buyB64) {
+        console.log(logPrefix, tag.warn('SIM BUY missing swap transaction payload'));
+      } else {
+        await simulateSwapLeg(conn, payer, buyB64, logPrefix, 'BUY');
+      }
+    } catch (error) {
+      console.log(
+        logPrefix,
+        tag.warn('SIM BUY build error'),
+        stringifyError((error as Error).message ?? error),
+      );
+    }
+  }
+
+  if (CFG.MODE !== 'buy-only') {
+    try {
+      const sellSwap = await buildSwapTx({
+        quote: quoteSellResult,
+        userPublicKey: payer.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+      });
+      const sellB64 = sellSwap.swapTransaction;
+      if (!sellB64) {
+        console.log(logPrefix, tag.warn('SIM SELL missing swap transaction payload'));
+      } else {
+        await simulateSwapLeg(conn, payer, sellB64, logPrefix, 'SELL');
+      }
+    } catch (error) {
+      console.log(
+        logPrefix,
+        tag.warn('SIM SELL build error'),
+        stringifyError((error as Error).message ?? error),
+      );
+    }
+  }
+}
 
 const routePassesFilters = (quote: JupiterQuote): boolean => {
   const labels = normalizeDexes(quote);
@@ -189,6 +311,9 @@ export async function processToken(
 
     if (CFG.PER_TOKEN_COOLDOWN_MS > 0) {
       await sleep(CFG.PER_TOKEN_COOLDOWN_MS);
+    }
+    if (CFG.DRY_RUN) {
+      await runDrySimulations(conn, payer, logPrefix, short, quoteBuyResult, quoteSellResult);
     }
   } catch (error) {
     stats.errors += 1;
