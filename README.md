@@ -1,4 +1,4 @@
-# APEX ARB v2.1 — USDC/MEME/USDC Arbitrage Bot
+# APEX ARB v2.1 — SOL/MEME/SOL Arbitrage Bot
 
 <p align="center">
   <img src="https://img.shields.io/badge/Solana-Mainnet-14F195?style=for-the-badge&logo=solana&logoColor=white">
@@ -10,7 +10,7 @@
 
 ## What is this?
 
-### 🚀 ApexArb is a CLI arbitrage bot that scans meme tokens and attempts a round-trip swap (USDC → MEME → USDC) via Jupiter (Free or Ultra).
+### 🚀 ApexArb is a CLI arbitrage bot that scans meme tokens and attempts a round-trip swap (SOL → MEME → SOL) via Jupiter (Free or Ultra).
 It calculates net profit (slippage, estimated Jupiter fee, priority fee + Jito tip), applies DEX filters, prints candidates with beautiful log cards, and optionally executes live trades.
 
 ## ✨ Features
@@ -20,6 +20,7 @@ It calculates net profit (slippage, estimated Jupiter fee, priority fee + Jito t
 - 🛡 DRY_RUN simulation with transaction `simulateTransaction` preview.
 - 📈 Snapshot telemetry & structured log files per session.
 - ⚡ Optional Jito bundle submissions (relayer mode).
+- 🚀 Helius Sender broadcast fallback for low-latency swaps ([guide](https://www.helius.dev/docs/sending-transactions/jupiter-swap-api-via-sender)).
 
 ---
 
@@ -27,7 +28,7 @@ It calculates net profit (slippage, estimated Jupiter fee, priority fee + Jito t
 
 ```
 bun install
-cp .env.example .env
+cp env.example .env
 # edit .env with your RPC + prefs
 
 # Dry run (recommended first)
@@ -41,9 +42,23 @@ Every `bun dev` session writes to `logs/session-*.log` with the exact console st
 
 ### Dry-Run Best Practices
 - Keep `DRY_RUN=true` and `JITO_MODE=off` to simulate without touching bundles.
-- Use `JITO_MODE=relayer` plus a dummy `JITO_TIP_ACCOUNT` if you want to test relayer logging while staying dry.
-- The bot now calls `simulateTransaction` for both BUY and SELL legs; watch the `SIM BUY` / `SIM SELL` lines for compute usage and last logs.
-- Snapshot output (`📈 SNAPSHOT`) includes `errors` so you can spot failing routes quickly.
+- Use `BASE_MINT=So11111111111111111111111111111111111111112` with `BASE_DECIMALS=9`, `BASE_SYMBOL=SOL`, and `LAMPORTS_PRICE_IN_BASE=1` to scan SOL pools without a wallet.
+- Adjust `BUY_AMOUNT_BASE`, `MIN_NET_PROFIT_BASE`, and `NEAR_MISS_DELTA` to tune opportunity thresholds (values are interpreted in the base asset you configure).
+- Use `INCLUDE_DEXES=raydium,orca,meteora` (or your own list) to keep the searcher focused on Solana-native pools.
+- The bot calls `simulateTransaction` for both BUY and SELL legs during dry runs; watch the `SIM BUY` / `SIM SELL` logs for compute usage and failing instructions.
+- Snapshot output (`📈 SNAPSHOT`) now reflects your base symbol and highlights the near-miss delta you set, so you can quickly spot marginal trades.
+
+### Base Asset Configuration
+- `BASE_MINT`, `BASE_DECIMALS`: default to SOL (`So111…`) with 9 decimals; override only if you intentionally route through another anchor asset.
+- `BASE_SYMBOL`, `BASE_SYMBOL_POSITION`, `BASE_DISPLAY_DECIMALS`: customise how amounts are rendered in logs (defaults suit SOL pairs).
+- `LAMPORTS_PRICE_IN_BASE`: keep at `1` to convert lamports into SOL; change only if you derive lamport costs via an external quote.
+- `BUY_AMOUNT_BASE`, `MIN_NET_PROFIT_BASE`, `NEAR_MISS_DELTA`: thresholds are interpreted in SOL, so tune them around your position sizing.
+
+### Optional Helius Sender Broadcast
+- Flip `SENDER_ENABLED=true` and supply `SENDER_ENDPOINT` (e.g. `https://ewr-sender.helius-rpc.com/fast?api-key=...`) to push signed swaps through Helius Sender alongside the default RPC flow.
+- Provide `SENDER_API_KEY` if your endpoint expects it as an `x-api-key` header.
+- Control transport behaviour with `SENDER_SKIP_PREFLIGHT`, `SENDER_MAX_RETRIES`, and `SENDER_CONFIRM_COMMITMENT` (use `'none'` to skip post-send confirmation).
+- When Jito bundles are disabled or rejected, the bot now retries via Sender before falling back to standard RPC, mirroring the setup recommended in the [Helius Sender + Jupiter guide](https://www.helius.dev/docs/sending-transactions/jupiter-swap-api-via-sender).
 
 ---
 
@@ -79,21 +94,21 @@ The bot loads it on startup.
                      github.com/apexarb
 ----------------------------------------------------------------------------------------------------
 🌈 ApexArb Launching…
-USDC ↔ MEME ↔ USDC Arbitrage — Jupiter [FREE]
+SOL ↔ MEME ↔ SOL Arbitrage — Jupiter [FREE]
 ℹ️  [i] RPC: https://… | ℹ️  [i] MODE: both | ℹ️  [i] DRY_RUN: true
-ℹ️  [i] BUY $: 50 | MIN_NET: $0.50 | SLIPPAGE: 0.50%
+ℹ️  [i] BUY SOL: 0.2500 | MIN_NET: SOL0.0100 | SLIPPAGE: 0.50%
 ℹ️  [i] DEX Allow (all): raydium, orca (aliases enabled)
 ----------------------------------------------------------------------------------------------------
 
-🎯 CANDIDATE  7d3A…kP9u   net $0.41
-back $50.41   size $50.0000   slip 0.50%
+🎯 CANDIDATE  7d3A…kP9u   net SOL0.0214
+back SOL0.2714   size SOL0.2500   slip 0.50%
 priority 10000+2000 lamports
 BUY: raydium > orca  SELL: orca > raydium
 
-[9f1c…Qx7Z] ⚠️  [!] SKIP net +$0.4140 | back $50.4140 | size $50.0000 | slippage 0.50% | priority 10000+2000 lamports |
+[9f1c…Qx7Z] ⚠️  [!] SKIP net +SOL0.0214 | back SOL0.2714 | size SOL0.2500 | slippage 0.50% | priority 10000+2000 lamports |
     BUY: meteora  SELL: meteora > raydium
 
-📈 SNAPSHOT (1m) | spreads=186 | candidates>=min=9 | executed=0 | bestNet=$0.41 | avgNet=$0.37 | nearMiss(≤$0.10)=4
+📈 SNAPSHOT (1m) | spreads=186 | candidates>=min=9 | executed=0 | bestNet=SOL0.021 | avgNet=SOL0.017 | nearMiss(≤SOL0.005)=4
 ----------------------------------------------------------------------------------------------------
 
 🟢 BUY SENT        5GkQ3…ZkTt8Y4oWgB1J7eNwLx…

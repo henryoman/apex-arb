@@ -9,14 +9,16 @@ import {
   JupiterQuote,
 } from './jupiter.js';
 import { normalizeDexSet, normalizeDexLabel } from './dex.js';
-import { lamportsToUSD, estimateJupFeeBps, sleep } from './utils.js';
+import { fromBaseUnits, estimateJupFeeBps, sleep } from './utils.js';
 import { stats } from './stats.js';
 import { card, tag, cyan, gray, green } from './logger.js';
 import { sendBundleWithTip } from './jito.js';
+import { sendViaSender } from './sender.js';
 
 const normalizeDexes = (quote: JupiterQuote) => normalizeDexSet(extractDexLabels(quote));
 
 const LOG_PREVIEW_LINES = 3;
+const LAMPORTS_PER_SOL = 1_000_000_000;
 
 function summarizeLogs(logs?: string[] | null): string {
   if (!logs?.length) return gray('logs=0');
@@ -174,9 +176,9 @@ export async function processToken(
 
   try {
     const quoteBuyResult = await quoteBuy(
-      CFG.USDC_MINT,
+      CFG.BASE_MINT,
       memeMint,
-      CFG.BUY_AMOUNT_USDC,
+      CFG.BUY_AMOUNT_BASE,
       CFG.SLIPPAGE_BPS,
     );
     if (!routePassesFilters(quoteBuyResult)) return;
@@ -185,23 +187,37 @@ export async function processToken(
 
     const quoteSellResult = await quoteSell(
       memeMint,
-      CFG.USDC_MINT,
+      CFG.BASE_MINT,
       outMemes.toString(),
       CFG.SLIPPAGE_BPS,
     );
     if (!routePassesFilters(quoteSellResult)) return;
 
-    const usdcBack = lamportsToUSD(quoteSellResult.outAmount);
-    const gross = usdcBack - CFG.BUY_AMOUNT_USDC;
+    const baseBack = fromBaseUnits(quoteSellResult.outAmount);
+    const gross = baseBack - CFG.BUY_AMOUNT_BASE;
 
     const jupFeeBuyBps = estimateJupFeeBps(memeMint);
     const jupFeeSellBps = estimateJupFeeBps(memeMint);
-    const jupFeesUsd =
-      (CFG.BUY_AMOUNT_USDC * jupFeeBuyBps) / 10_000 +
-      (usdcBack * jupFeeSellBps) / 10_000;
+    const jupFeesBase =
+      (CFG.BUY_AMOUNT_BASE * jupFeeBuyBps) / 10_000 +
+      (baseBack * jupFeeSellBps) / 10_000;
 
-    const priorityUsd = (CFG.PRIORITY_LAMPORTS + CFG.JITO_TIP_LAMPORTS) / 1e9 * 150;
-    const net = gross - jupFeesUsd - priorityUsd;
+    const totalLamports = CFG.PRIORITY_LAMPORTS + CFG.JITO_TIP_LAMPORTS;
+    const priorityCostBase = (totalLamports / LAMPORTS_PER_SOL) * CFG.LAMPORTS_PRICE_IN_BASE;
+    const net = gross - jupFeesBase - priorityCostBase;
+
+    if (!Number.isFinite(baseBack) || !Number.isFinite(net)) {
+      stats.errors += 1;
+      console.log(
+        logPrefix,
+        tag.warn('SKIP invalid net'),
+        '| back',
+        String(baseBack),
+        '| net',
+        String(net),
+      );
+      return;
+    }
 
     const dexBuy = normalizeDexes(quoteBuyResult);
     const dexSell = normalizeDexes(quoteSellResult);
@@ -211,30 +227,42 @@ export async function processToken(
     if (net > stats.bestNet) stats.bestNet = net;
     stats.totalNetSum += net;
 
-    const netStr = net >= 0 ? tag.usd(net) : tag.negusd(net);
-    const candidate = net >= CFG.MIN_NET_PROFIT_USDC;
+    if (net <= 0) {
+      console.log(
+        logPrefix,
+        tag.warn('SKIP non-positive net'),
+        '| net',
+        tag.negAmount(Math.abs(net)),
+        '| back',
+        tag.amount(baseBack),
+      );
+      return;
+    }
+
+    const netStr = net >= 0 ? tag.amount(net) : tag.negAmount(net);
+    const candidate = net >= CFG.MIN_NET_PROFIT_BASE;
 
     if (candidate) {
       stats.candidates += 1;
       stats.candidateNetSum += net;
       const title = `🎯 CANDIDATE  ${short}   net ${netStr}`;
       const body = [
-        `${cyan('back')} ${tag.usd(usdcBack)}   ${cyan('size')} ${tag.usd(CFG.BUY_AMOUNT_USDC)}   ${cyan('slip')} ${(CFG.SLIPPAGE_BPS / 100).toFixed(2)}%`,
+        `${cyan('back')} ${tag.amount(baseBack)}   ${cyan('size')} ${tag.amount(CFG.BUY_AMOUNT_BASE)}   ${cyan('slip')} ${(CFG.SLIPPAGE_BPS / 100).toFixed(2)}%`,
         `${cyan('priority')} ${CFG.PRIORITY_LAMPORTS}+${CFG.JITO_TIP_LAMPORTS} lamports   ${CFG.DRY_RUN ? gray('DRY_RUN') : green('LIVE')}`,
         `${dexStr}`,
       ].join('\n');
       console.log(card(title, body, 'ok'));
     } else {
-      if (CFG.MIN_NET_PROFIT_USDC - net <= 0.1) stats.nearMiss += 1;
+      if (CFG.MIN_NET_PROFIT_BASE - net <= CFG.NEAR_MISS_DELTA) stats.nearMiss += 1;
       console.log(
         logPrefix,
         tag.warn('SKIP'),
         'net',
         netStr,
         '| back',
-        tag.usd(usdcBack),
+        tag.amount(baseBack),
         '| size',
-        tag.usd(CFG.BUY_AMOUNT_USDC),
+        tag.amount(CFG.BUY_AMOUNT_BASE),
         '| slippage',
         `${(CFG.SLIPPAGE_BPS / 100).toFixed(2)}%`,
         '| priority',
@@ -252,6 +280,30 @@ export async function processToken(
         return;
       }
 
+      const describeTransport = (transport: 'sender' | 'rpc') => (transport === 'sender' ? 'Sender' : 'RPC');
+      const jitoMode = (process.env.JITO_MODE ?? 'off').toLowerCase();
+
+      const dispatchSwap = async (
+        swapB64: string,
+        leg: 'BUY' | 'SELL',
+      ): Promise<{ signature: string; transport: 'sender' | 'rpc' }> => {
+        if (CFG.SENDER_ENABLED && CFG.SENDER_ENDPOINT) {
+          try {
+            const signature = await sendViaSender(conn, swapB64, payer);
+            return { signature, transport: 'sender' };
+          } catch (error) {
+            console.log(
+              logPrefix,
+              tag.warn(`[SENDER] ${leg} send failed`),
+              stringifyError((error as Error).message ?? error),
+            );
+          }
+        }
+
+        const fallbackSignature = await sendB64Tx(conn, swapB64, payer);
+        return { signature: fallbackSignature, transport: 'rpc' };
+      };
+
       const buySwap = await buildSwapTx({
         quote: quoteBuyResult,
         userPublicKey: payer.publicKey.toBase58(),
@@ -260,7 +312,7 @@ export async function processToken(
       const buyB64 = buySwap.swapTransaction;
       if (!buyB64) throw new Error('buy swap tx not provided');
 
-      if ((process.env.JITO_MODE ?? 'off').toLowerCase() === 'relayer') {
+      if (jitoMode === 'relayer') {
         const bundleId = await sendBundleWithTip({
           conn,
           swapB64: buyB64,
@@ -270,12 +322,18 @@ export async function processToken(
         if (bundleId) {
           console.log(card('🧩 BUY BUNDLE SENT', cyan(String(bundleId)), 'ok'));
         } else {
-          const sigBuy = await sendB64Tx(conn, buyB64, payer);
-          console.log(card('🟢 BUY SENT (fallback)', cyan(sigBuy), 'ok'));
+          const result = await dispatchSwap(buyB64, 'BUY');
+          console.log(
+            card(
+              `🟢 BUY SENT (fallback ${describeTransport(result.transport)})`,
+              cyan(result.signature),
+              'ok',
+            ),
+          );
         }
       } else {
-        const sigBuy = await sendB64Tx(conn, buyB64, payer);
-        console.log(card('🟢 BUY SENT', cyan(sigBuy), 'ok'));
+        const result = await dispatchSwap(buyB64, 'BUY');
+        console.log(card(`🟢 BUY SENT (${describeTransport(result.transport)})`, cyan(result.signature), 'ok'));
       }
 
       if (CFG.MODE !== 'buy-only') {
@@ -287,7 +345,7 @@ export async function processToken(
         const sellB64 = sellSwap.swapTransaction;
         if (!sellB64) throw new Error('sell swap tx not provided');
 
-        if ((process.env.JITO_MODE ?? 'off').toLowerCase() === 'relayer') {
+        if (jitoMode === 'relayer') {
           const bundleId = await sendBundleWithTip({
             conn,
             swapB64: sellB64,
@@ -297,12 +355,18 @@ export async function processToken(
           if (bundleId) {
             console.log(card('🧩 SELL BUNDLE SENT', cyan(String(bundleId)), 'ok'));
           } else {
-            const sigSell = await sendB64Tx(conn, sellB64, payer);
-            console.log(card('🔵 SELL SENT (fallback)', cyan(sigSell), 'ok'));
+            const result = await dispatchSwap(sellB64, 'SELL');
+            console.log(
+              card(
+                `🔵 SELL SENT (fallback ${describeTransport(result.transport)})`,
+                cyan(result.signature),
+                'ok',
+              ),
+            );
           }
         } else {
-          const sigSell = await sendB64Tx(conn, sellB64, payer);
-          console.log(card('🔵 SELL SENT', cyan(sigSell), 'ok'));
+          const result = await dispatchSwap(sellB64, 'SELL');
+          console.log(card(`🔵 SELL SENT (${describeTransport(result.transport)})`, cyan(result.signature), 'ok'));
         }
       }
 

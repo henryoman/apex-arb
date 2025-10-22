@@ -148,8 +148,12 @@ export async function sendBundleWithTip({
   }
 
   try {
-    const bundleId = await jitoClient.sendBundle(bundleTx);
-    return bundleId;
+    const bundleResult = await jitoClient.sendBundle(bundleTx);
+    if (!bundleResult.ok) {
+      console.log(tag.warn(`[JITO] sendBundle error: ${bundleResult.error.message}`));
+      return null;
+    }
+    return bundleResult.value;
   } catch (error) {
     console.log(tag.warn(`[JITO] sendBundle error: ${(error as Error).message}`));
     return null;

@@ -1,5 +1,6 @@
 import { bold, underline, cyan, magenta, green, yellow, gray } from './logger.js';
 import { tag } from './logger.js';
+import { CFG } from './config.js';
 
 export interface StatsState {
   minuteWindowStart: number;
@@ -31,9 +32,9 @@ export function snapshotTick(): void {
 
   const avgSeen = stats.seenSpreads ? stats.totalNetSum / stats.seenSpreads : 0;
   const avgCandidates = stats.candidates ? stats.candidateNetSum / stats.candidates : 0;
-  const formatUsd = (value: number) => (value >= 0 ? tag.usd(value) : tag.negusd(value));
+  const formatBase = (value: number) => (value >= 0 ? tag.amount(value) : tag.negAmount(value));
   const bestNetDisplay = Number.isFinite(stats.bestNet)
-    ? formatUsd(stats.bestNet)
+    ? formatBase(stats.bestNet)
     : gray('n/a');
   const title = bold(underline('📈 SNAPSHOT (1m)'));
   const line = [
@@ -42,9 +43,9 @@ export function snapshotTick(): void {
     `candidates>=min=${green(String(stats.candidates))}`,
     `executed=${magenta(String(stats.executed))}`,
     `bestNet=${bestNetDisplay}`,
-    `avgNetSeen=${formatUsd(avgSeen)}`,
-    `avgNetCandidates=${stats.candidates ? formatUsd(avgCandidates) : gray('n/a')}`,
-    `nearMiss(≤$0.10)=${yellow(String(stats.nearMiss))}`,
+    `avgNetSeen=${formatBase(avgSeen)}`,
+    `avgNetCandidates=${stats.candidates ? formatBase(avgCandidates) : gray('n/a')}`,
+    `nearMiss(≤${tag.amount(CFG.NEAR_MISS_DELTA)})=${yellow(String(stats.nearMiss))}`,
     `errors=${yellow(String(stats.errors))}`,
   ].join('  |  ');
   console.log('\n' + line + '\n' + gray('-'.repeat(100)));

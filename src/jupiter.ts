@@ -4,6 +4,7 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js';
 import { CFG, JUP_BASE } from './config.js';
+import { toBaseUnits } from './utils.js';
 import { httpGet, httpPost } from './http.js';
 
 export interface JupiterRoutePlanStep {
@@ -45,15 +46,15 @@ interface QuoteResponseWrapper {
 }
 
 export async function quoteBuy(
-  usdcMint: string,
+  baseMint: string,
   memeMint: string,
-  amountUsdc: number,
+  amountBase: number,
   slippageBps: number,
 ): Promise<JupiterQuote> {
   const query = {
-    inputMint: usdcMint,
+    inputMint: baseMint,
     outputMint: memeMint,
-    amount: Math.floor(amountUsdc * 1_000_000).toString(),
+    amount: toBaseUnits(amountBase).toString(),
     slippageBps: slippageBps.toString(),
   };
   const url = `${JUP_BASE}/swap/v1/quote`;
@@ -129,12 +130,16 @@ export async function sendB64Tx(
 export function extractDexLabels(quote: JupiterQuote): string[] {
   try {
     const labels = new Set<string>();
-    const routePlan = quote.routePlan ?? quote.marketInfos ?? [];
+    const routePlan = quote.routePlan ?? [];
     for (const hop of routePlan) {
       if (hop?.swapInfo?.label) labels.add(hop.swapInfo.label);
       if (hop?.swapInfo?.ammLabel) labels.add(hop.swapInfo.ammLabel);
       if (hop?.label) labels.add(hop.label);
       if (hop?.ammLabel) labels.add(hop.ammLabel);
+    }
+    for (const info of quote.marketInfos ?? []) {
+      if (info?.label) labels.add(info.label);
+      if (info?.ammLabel) labels.add(info.ammLabel);
     }
     if (Array.isArray(quote.routes)) {
       for (const route of quote.routes) {

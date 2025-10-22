@@ -32,8 +32,8 @@ function inspectConfig(config: Config): ConfigIssue[] {
     min?: number;
     allowZero?: boolean;
   }> = [
-    { field: 'BUY_AMOUNT_USDC', value: config.BUY_AMOUNT_USDC, min: 0 },
-    { field: 'MIN_NET_PROFIT_USDC', value: config.MIN_NET_PROFIT_USDC, min: 0, allowZero: true },
+    { field: 'BUY_AMOUNT_BASE', value: config.BUY_AMOUNT_BASE, min: 0 },
+    { field: 'MIN_NET_PROFIT_BASE', value: config.MIN_NET_PROFIT_BASE, min: 0, allowZero: true },
     { field: 'SLIPPAGE_BPS', value: config.SLIPPAGE_BPS, min: 0, allowZero: true },
     { field: 'PRIORITY_LAMPORTS', value: config.PRIORITY_LAMPORTS, min: 0, allowZero: true },
     { field: 'JITO_TIP_LAMPORTS', value: config.JITO_TIP_LAMPORTS, min: 0, allowZero: true },
@@ -43,6 +43,11 @@ function inspectConfig(config: Config): ConfigIssue[] {
     { field: 'HTTP_TIMEOUT_MS', value: config.HTTP_TIMEOUT_MS, min: 1 },
     { field: 'FETCH_RETRIES', value: config.FETCH_RETRIES, min: 1 },
     { field: 'RETRY_BACKOFF_MS', value: config.RETRY_BACKOFF_MS, min: 0, allowZero: true },
+    { field: 'BASE_DECIMALS', value: config.BASE_DECIMALS, min: 0 },
+    { field: 'BASE_DISPLAY_DECIMALS', value: config.BASE_DISPLAY_DECIMALS, min: 0 },
+    { field: 'NEAR_MISS_DELTA', value: config.NEAR_MISS_DELTA, min: 0, allowZero: true },
+    { field: 'LAMPORTS_PRICE_IN_BASE', value: config.LAMPORTS_PRICE_IN_BASE, min: 0, allowZero: true },
+    { field: 'SENDER_MAX_RETRIES', value: config.SENDER_MAX_RETRIES, min: 0, allowZero: true },
   ];
 
   for (const { field, value, min = 0, allowZero } of numericChecks) {
@@ -69,6 +74,12 @@ function inspectConfig(config: Config): ConfigIssue[] {
 
   if (!config.DRY_RUN && !config.PRIVATE_KEY_B58) {
     issues.push({ severity: 'error', message: 'DRY_RUN=false requires PRIVATE_KEY_B58.' });
+  }
+
+  if (config.SENDER_ENABLED) {
+    if (!config.SENDER_ENDPOINT) {
+      issues.push({ severity: 'error', message: 'SENDER_ENABLED=true requires SENDER_ENDPOINT.' });
+    }
   }
 
   return issues;
@@ -126,9 +137,27 @@ function logStartupContext(memeCount: number): void {
   console.log(
     tag.info(`Memes file: ${path.resolve('memes.txt')}`),
     '|',
-    tag.info(`USDC mint: ${CFG.USDC_MINT}`),
+    tag.info(`Base mint: ${CFG.BASE_MINT}`),
+    '|',
+    tag.info(`Base decimals: ${CFG.BASE_DECIMALS}`),
+  );
+
+  console.log(
+    tag.info(`Base symbol: ${CFG.BASE_SYMBOL || '(none)'} (${CFG.BASE_SYMBOL_POSITION})`),
+    '|',
+    tag.info(`Display decimals: ${CFG.BASE_DISPLAY_DECIMALS}`),
     '|',
     tag.info(`Include mode: ${CFG.INCLUDE_MODE}`),
+  );
+
+  console.log(
+    tag.info(`Sender: ${CFG.SENDER_ENABLED ? 'enabled' : 'disabled'}`),
+    '|',
+    tag.info(`Sender commitment: ${CFG.SENDER_CONFIRM_COMMITMENT}`),
+    '|',
+    tag.info(`Sender retries: ${Math.max(0, Math.floor(Number.isFinite(CFG.SENDER_MAX_RETRIES) ? CFG.SENDER_MAX_RETRIES : 0))}`),
+    '|',
+    tag.info(`Sender endpoint: ${CFG.SENDER_ENDPOINT ? '(set)' : '(unset)'}`),
   );
 }
 
@@ -139,7 +168,7 @@ async function main(): Promise<void> {
   console.log(tag.info('Runtime context initialising…'), logFilePath ? gray(`→ ${logFilePath}`) : gray('(no file)'));
 
   console.log(
-    '\nUSDC ↔ MEME ↔ USDC Arbitrage — Jupiter',
+    `\n${CFG.BASE_SYMBOL} ↔ MEME ↔ ${CFG.BASE_SYMBOL} Arbitrage — Jupiter`,
     cyan(`[${CFG.JUP_MODE}]`),
   );
   console.log(
@@ -151,7 +180,7 @@ async function main(): Promise<void> {
   );
   console.log(
     tag.info(
-      `BUY $: ${CFG.BUY_AMOUNT_USDC} | MIN_NET: $${CFG.MIN_NET_PROFIT_USDC} | SLIPPAGE: ${(CFG.SLIPPAGE_BPS / 100).toFixed(2)}%`,
+      `BUY: ${tag.amount(CFG.BUY_AMOUNT_BASE)} | MIN_NET: ${tag.amount(CFG.MIN_NET_PROFIT_BASE)} | SLIPPAGE: ${(CFG.SLIPPAGE_BPS / 100).toFixed(2)}%`,
     ),
   );
 

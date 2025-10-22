@@ -2,7 +2,7 @@
   "name": "apex-meme-arb-bot",
   "version": "1.0.2",
   "type": "module",
-  "description": "USDC/MEME/USDC arbitrage scanner & executor via Jupiter API (free/ultra) with multi-DEX awareness, snapshots, and colorful logs.",
+  "description": "SOL/MEME/SOL arbitrage scanner & executor via Jupiter API (free/ultra) with multi-DEX awareness, snapshots, and colorful logs.",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
